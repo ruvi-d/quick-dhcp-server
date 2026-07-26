@@ -15,9 +15,18 @@
 set -euo pipefail
 
 DEFAULT_LINK_IFACE="enp9s0u1u4u2u4"
-LINK_IP="10.0.0.1"
-LINK_NET="10.0.0.0/24"
-LINK_PREFIX=24
+
+# Network config for the DHCP link -- edit these together to move or resize
+# the served range. Everything below (iptables rules, dnsmasq.conf) is
+# generated from these values, so nothing else needs to change. For a single
+# client, set CLIENT_IP_START and CLIENT_IP_END to the same address.
+LINK_IP="10.0.0.1"         # host's IP on the link (DHCP "router" option)
+CLIENT_IP_START="10.0.0.2" # first IP dnsmasq will hand out
+CLIENT_IP_END="10.0.0.2"   # last IP dnsmasq will hand out
+LINK_PREFIX=24              # CIDR prefix shared by all of the above
+NETMASK="255.255.255.0"     # dotted-quad form of LINK_PREFIX, for dnsmasq
+LINK_NET="10.0.0.0/24"      # network in CIDR form, for iptables
+
 STATE_FILE="/run/dhcp-docker-p2p.state"
 COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -76,12 +85,17 @@ start() {
     iptables -I INPUT 1 -i "$LINK_IFACE" -p udp --dport 67 -j ACCEPT
 
   echo "Writing dnsmasq.conf for interface '${LINK_IFACE}'..."
-  sed "s/@LINK_IFACE@/${LINK_IFACE}/g" "$COMPOSE_DIR/dnsmasq.conf.template" > "$COMPOSE_DIR/dnsmasq.conf"
+  sed -e "s/@LINK_IFACE@/${LINK_IFACE}/g" \
+      -e "s/@ROUTER_IP@/${LINK_IP}/g" \
+      -e "s/@CLIENT_IP_START@/${CLIENT_IP_START}/g" \
+      -e "s/@CLIENT_IP_END@/${CLIENT_IP_END}/g" \
+      -e "s/@NETMASK@/${NETMASK}/g" \
+      "$COMPOSE_DIR/dnsmasq.conf.template" > "$COMPOSE_DIR/dnsmasq.conf"
 
   echo "Starting DHCP server container..."
   ( cd "$COMPOSE_DIR" && docker compose up -d --build )
 
-  echo "Done. Embedded device should get ${LINK_IP%.*}.2 via DHCP and reach the internet through ${uplink}."
+  echo "Done. Clients should get an IP in ${CLIENT_IP_START}-${CLIENT_IP_END} via DHCP and reach the internet through ${uplink}."
 }
 
 stop() {

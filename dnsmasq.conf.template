@@ -1,10 +1,13 @@
-# dnsmasq config template for a direct point-to-point DHCP link to a single
-# embedded device. Only speaks DHCP -- DNS proxying is disabled (port=0) so
-# this doesn't fight with the host's own resolver/port 53.
+# dnsmasq config template for a direct ethernet DHCP link, serving one or
+# more embedded devices out of a configurable IP range. Only speaks DHCP --
+# DNS proxying is disabled (port=0) so this doesn't fight with the host's
+# own resolver/port 53.
 #
-# @LINK_IFACE@ is substituted by setup-routing.sh at `start` time into the
-# generated dnsmasq.conf (gitignored) that actually gets baked into the
-# container image; don't edit dnsmasq.conf directly, edit this file instead.
+# @LINK_IFACE@, @ROUTER_IP@, @CLIENT_IP_START@, @CLIENT_IP_END@, and
+# @NETMASK@ are substituted by setup-routing.sh at `start` time (from its
+# top-of-file network config) into the generated dnsmasq.conf (gitignored)
+# that actually gets baked into the container image; don't edit
+# dnsmasq.conf directly, edit this file instead.
 
 # Only bind to this interface (container runs with --network host, so
 # without this dnsmasq would otherwise see every host interface).
@@ -16,10 +19,10 @@ except-interface=lo
 port=0
 
 # Client IP address range
-dhcp-range=10.0.0.2,10.0.0.2,255.255.255.0,12h
+dhcp-range=@CLIENT_IP_START@,@CLIENT_IP_END@,@NETMASK@,12h
 
 # Point the device back at the host for its default route.
-dhcp-option=option:router,10.0.0.1
+dhcp-option=option:router,@ROUTER_IP@
 
 # Public DNS resolvers, since we're not running a DNS proxy ourselves.
 dhcp-option=option:dns-server,1.1.1.1,8.8.8.8
