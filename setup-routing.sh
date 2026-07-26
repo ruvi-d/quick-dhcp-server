@@ -36,12 +36,38 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+require_cmds() {
+  local cmd missing=()
+  for cmd in "$@"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "Missing required command(s): ${missing[*]}. See README Requirements." >&2
+    exit 1
+  fi
+}
+require_cmds ip iptables sed grep docker
+if ! docker compose version >/dev/null 2>&1; then
+  echo "'docker compose' (v2 plugin) not found. See README Requirements." >&2
+  exit 1
+fi
+
 uplink_iface() {
   ip route show default | awk '/^default/ {for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1); exit}'
 }
 
 start() {
+  if [[ -f "$STATE_FILE" ]]; then
+    echo "Already running (state file $STATE_FILE exists). Run '$0 stop' first, or use 'restart'." >&2
+    exit 1
+  fi
+
   LINK_IFACE="${1:-$DEFAULT_LINK_IFACE}"
+
+  if ! ip link show "$LINK_IFACE" >/dev/null 2>&1; then
+    echo "Interface '$LINK_IFACE' not found." >&2
+    exit 1
+  fi
 
   local uplink
   uplink="$(uplink_iface)"
