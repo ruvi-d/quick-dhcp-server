@@ -1,0 +1,10 @@
+services:
+  dhcp-server:
+    build: .
+    image: quick-dhcp-server
+    container_name: dhcp-p2p
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
