@@ -95,6 +95,11 @@ start() {
   echo "Starting DHCP server container..."
   ( cd "$COMPOSE_DIR" && docker compose up -d --build )
 
+  echo "Starting link-state watcher for '${LINK_IFACE}'..."
+  setsid "$COMPOSE_DIR/link-watch.sh" "$LINK_IFACE" "$COMPOSE_DIR" \
+    >>/run/dhcp-link-watch.log 2>&1 &
+  echo "watcher_pid=$!" >> "$STATE_FILE"
+
   echo "Done. Clients should get an IP in ${CLIENT_IP_START}-${CLIENT_IP_END} via DHCP and reach the internet through ${uplink}."
 }
 
@@ -103,6 +108,15 @@ stop() {
     LINK_IFACE="$(grep -oP '(?<=link_iface=).*' "$STATE_FILE" || echo "$DEFAULT_LINK_IFACE")"
   else
     LINK_IFACE="$DEFAULT_LINK_IFACE"
+  fi
+
+  if [[ -f "$STATE_FILE" ]]; then
+    local watcher_pid
+    watcher_pid="$(grep -oP '(?<=watcher_pid=).*' "$STATE_FILE" || true)"
+    if [[ -n "$watcher_pid" ]]; then
+      echo "Stopping link-state watcher (pid ${watcher_pid})..."
+      kill -TERM -"$watcher_pid" 2>/dev/null || true
+    fi
   fi
 
   echo "Stopping DHCP server container..."
