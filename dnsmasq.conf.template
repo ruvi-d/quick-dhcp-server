@@ -1,10 +1,14 @@
-# dnsmasq config for a direct point-to-point DHCP link to a single embedded
-# device over enp9s0u1u4u2u4. Only speaks DHCP -- DNS proxying is disabled
-# (port=0) so this doesn't fight with the host's own resolver/port 53.
+# dnsmasq config template for a direct point-to-point DHCP link to a single
+# embedded device. Only speaks DHCP -- DNS proxying is disabled (port=0) so
+# this doesn't fight with the host's own resolver/port 53.
+#
+# @LINK_IFACE@ is substituted by setup-routing.sh at `start` time into the
+# generated dnsmasq.conf (gitignored) that actually gets baked into the
+# container image; don't edit dnsmasq.conf directly, edit this file instead.
 
 # Only bind to this interface (container runs with --network host, so
 # without this dnsmasq would otherwise see every host interface).
-interface=enp9s0u1u4u2u4
+interface=@LINK_IFACE@
 bind-interfaces
 except-interface=lo
 

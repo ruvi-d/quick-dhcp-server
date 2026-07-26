@@ -4,13 +4,17 @@
 # internet through the host's normal uplink (auto-detected default route).
 #
 # Usage:
-#   sudo ./setup-routing.sh start   # configure IP + NAT, start the DHCP container
-#   sudo ./setup-routing.sh stop    # undo everything, stop the DHCP container
-#   sudo ./setup-routing.sh restart # stop, then start
+#   sudo ./setup-routing.sh [iface] start   # configure IP + NAT, start the DHCP container
+#   sudo ./setup-routing.sh stop            # undo everything, stop the DHCP container
+#   sudo ./setup-routing.sh restart         # stop, then start again on the same iface
+#
+# [iface] defaults to DEFAULT_LINK_IFACE below if omitted. `stop`/`restart`
+# never take an iface -- they reuse whatever interface the last `start`
+# recorded in $STATE_FILE.
 
 set -euo pipefail
 
-LINK_IFACE="enp9s0u1u4u2u4"
+DEFAULT_LINK_IFACE="enp9s0u1u4u2u4"
 LINK_IP="10.0.0.1"
 LINK_NET="10.0.0.0/24"
 LINK_PREFIX=24
@@ -27,13 +31,15 @@ uplink_iface() {
 }
 
 start() {
+  LINK_IFACE="${1:-$DEFAULT_LINK_IFACE}"
+
   local uplink
   uplink="$(uplink_iface)"
   if [[ -z "$uplink" || "$uplink" == "$LINK_IFACE" ]]; then
     echo "Could not determine a distinct internet-facing uplink interface (got: '${uplink:-none}')." >&2
     exit 1
   fi
-  echo "Using '$uplink' as the internet uplink."
+  echo "Using '$LINK_IFACE' as the device link and '$uplink' as the internet uplink."
 
   # Stop NetworkManager from touching this link (auto-connect/DHCP-client
   # races can silently rewrite or drop the static IP we're about to set).
@@ -49,6 +55,7 @@ start() {
   prev_forward="$(cat /proc/sys/net/ipv4/ip_forward)"
   echo "ip_forward=1 uplink=${uplink}" > "$STATE_FILE"
   echo "prev_ip_forward=${prev_forward}" >> "$STATE_FILE"
+  echo "link_iface=${LINK_IFACE}" >> "$STATE_FILE"
   sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
   # NAT the embedded device's traffic out through the uplink.
@@ -68,6 +75,9 @@ start() {
   iptables -C INPUT -i "$LINK_IFACE" -p udp --dport 67 -j ACCEPT 2>/dev/null || \
     iptables -I INPUT 1 -i "$LINK_IFACE" -p udp --dport 67 -j ACCEPT
 
+  echo "Writing dnsmasq.conf for interface '${LINK_IFACE}'..."
+  sed "s/@LINK_IFACE@/${LINK_IFACE}/g" "$COMPOSE_DIR/dnsmasq.conf.template" > "$COMPOSE_DIR/dnsmasq.conf"
+
   echo "Starting DHCP server container..."
   ( cd "$COMPOSE_DIR" && docker compose up -d --build )
 
@@ -75,6 +85,12 @@ start() {
 }
 
 stop() {
+  if [[ -f "$STATE_FILE" ]]; then
+    LINK_IFACE="$(grep -oP '(?<=link_iface=).*' "$STATE_FILE" || echo "$DEFAULT_LINK_IFACE")"
+  else
+    LINK_IFACE="$DEFAULT_LINK_IFACE"
+  fi
+
   echo "Stopping DHCP server container..."
   ( cd "$COMPOSE_DIR" && docker compose down ) || true
 
@@ -113,13 +129,32 @@ stop() {
 }
 
 restart() {
+  local iface
+  if [[ -f "$STATE_FILE" ]]; then
+    iface="$(grep -oP '(?<=link_iface=).*' "$STATE_FILE" || echo "$DEFAULT_LINK_IFACE")"
+  else
+    iface="$DEFAULT_LINK_IFACE"
+  fi
   stop
-  start
+  start "$iface"
 }
 
-case "${1:-start}" in
-  start) start ;;
+IFACE_ARG=""
+ACTION="start"
+
+case "${1:-}" in
+  start|stop|restart|"")
+    ACTION="${1:-start}"
+    ;;
+  *)
+    IFACE_ARG="$1"
+    ACTION="${2:-start}"
+    ;;
+esac
+
+case "$ACTION" in
+  start) start "$IFACE_ARG" ;;
   stop) stop ;;
   restart) restart ;;
-  *) echo "Usage: $0 [start|stop|restart]" >&2; exit 1 ;;
+  *) echo "Usage: $0 [iface] start | stop | restart" >&2; exit 1 ;;
 esac
