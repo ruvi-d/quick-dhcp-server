@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sets up (and tears down) temporary host-side routing for a direct
-# ethernet link to an embedded device on $LINK_IFACE, so it can reach the
-# internet through the host's normal uplink (auto-detected default route).
+# ethernet link on $LINK_IFACE, so device(s) on it can reach the internet
+# through the host's normal uplink (auto-detected default route).
 #
 # Usage:
 #   sudo ./setup-routing.sh [iface] start   # configure IP + NAT, start the DHCP container
@@ -18,8 +18,9 @@ DEFAULT_LINK_IFACE="enp9s0u1u4u2u4"
 
 # Network config for the DHCP link -- edit these together to move or resize
 # the served range. Everything below (iptables rules, dnsmasq.conf) is
-# generated from these values, so nothing else needs to change. For a single
-# client, set CLIENT_IP_START and CLIENT_IP_END to the same address.
+# generated from these values, so nothing else needs to change. Widen
+# CLIENT_IP_START/CLIENT_IP_END to serve more than one device at a time; if
+# they're set to the same address, only a single device can be served.
 LINK_IP="10.0.0.1"         # host's IP on the link (DHCP "router" option)
 CLIENT_IP_START="10.0.0.2" # first IP dnsmasq will hand out
 CLIENT_IP_END="10.0.0.2"   # last IP dnsmasq will hand out
