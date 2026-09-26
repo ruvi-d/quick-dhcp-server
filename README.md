@@ -13,7 +13,10 @@ and drives the container.
 
 - `setup-routing.sh` assigns a static IP to the link interface, enables IP
   forwarding, and adds iptables NAT/FORWARD rules so devices' traffic goes
-  out through the host's auto-detected default route (uplink).
+  out through the host's auto-detected default route (uplink). If firewalld
+  is running (e.g. Fedora), the link interface is moved into the `trusted`
+  zone for the session (runtime only) and restored on `stop` -- otherwise
+  firewalld silently rejects the devices' DHCP requests.
 - `dnsmasq.conf.template` is rendered into a gitignored `dnsmasq.conf` with
   the interface and IP range substituted in, then baked into the container
   image via `Dockerfile` / `docker-compose.yml`.

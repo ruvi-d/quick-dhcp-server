@@ -52,6 +52,10 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+firewalld_running() {
+  command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1
+}
+
 uplink_iface() {
   ip route show default | awk '/^default/ {for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1); exit}'
 }
@@ -111,6 +115,18 @@ start() {
   iptables -C INPUT -i "$LINK_IFACE" -p udp --dport 67 -j ACCEPT 2>/dev/null || \
     iptables -I INPUT 1 -i "$LINK_IFACE" -p udp --dport 67 -j ACCEPT
 
+  # firewalld (Fedora etc.) keeps its own nftables table, and with nftables a
+  # packet must be accepted by every table hooked on input -- so the iptables
+  # ACCEPT above doesn't override firewalld rejecting udp/67. Move the link
+  # into the trusted zone (runtime only) and remember where it was.
+  if firewalld_running; then
+    local prev_zone
+    prev_zone="$(firewall-cmd --get-zone-of-interface="$LINK_IFACE" 2>/dev/null || true)"
+    echo "prev_fw_zone=${prev_zone}" >> "$STATE_FILE"
+    echo "Moving ${LINK_IFACE} to firewalld zone 'trusted' (was: '${prev_zone:-none}')..."
+    firewall-cmd --zone=trusted --change-interface="$LINK_IFACE" >/dev/null
+  fi
+
   echo "Writing dnsmasq.conf for interface '${LINK_IFACE}'..."
   sed -e "s/@LINK_IFACE@/${LINK_IFACE}/g" \
       -e "s/@ROUTER_IP@/${LINK_IP}/g" \
@@ -165,6 +181,18 @@ stop() {
   fi
 
   iptables -D INPUT -i "$LINK_IFACE" -p udp --dport 67 -j ACCEPT 2>/dev/null || true
+
+  if firewalld_running && [[ -f "$STATE_FILE" ]] && grep -q '^prev_fw_zone=' "$STATE_FILE"; then
+    local prev_zone
+    prev_zone="$(grep -oP '(?<=^prev_fw_zone=).*' "$STATE_FILE" || true)"
+    if [[ -n "$prev_zone" ]]; then
+      echo "Restoring ${LINK_IFACE} to firewalld zone '${prev_zone}'..."
+      firewall-cmd --zone="$prev_zone" --change-interface="$LINK_IFACE" >/dev/null 2>&1 || true
+    else
+      echo "Removing ${LINK_IFACE} from firewalld zone 'trusted'..."
+      firewall-cmd --zone=trusted --remove-interface="$LINK_IFACE" >/dev/null 2>&1 || true
+    fi
+  fi
 
   if [[ -f "$STATE_FILE" ]]; then
     local prev_forward

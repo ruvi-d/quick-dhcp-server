@@ -8,7 +8,11 @@ IFACE="$1"
 COMPOSE_DIR="$2"
 
 up=1
-ip monitor link dev "$IFACE" 2>/dev/null | while read -r line; do
+# -o (oneline): without it each event spans two lines, and the second
+# ("link/ether ...") never contains LOWER_UP, so every event -- even an
+# unrelated flag change like tcpdump toggling PROMISC -- looked like a
+# down->up bounce and restarted the container.
+ip -o monitor link dev "$IFACE" 2>/dev/null | while read -r line; do
   if [[ "$line" == *"LOWER_UP"* ]]; then
     if [[ $up -eq 0 ]]; then
       echo "$(date -Is) [link-watch] ${IFACE} link restored, restarting dhcp-server"
